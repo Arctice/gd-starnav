@@ -1,0 +1,33 @@
+BasedOnStyle: LLVM
+
+ColumnLimit: 80
+IndentWidth: 4
+AccessModifierOffset: -4
+
+AllowShortBlocksOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  BeforeCatch: true
+  BeforeElse: true
+  AfterFunction: true
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+
+AlwaysBreakTemplateDeclarations: MultiLine
+
+BreakBeforeBinaryOperators: All
+BreakBeforeTernaryOperators: true
+AlignOperands: true
+
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+SortIncludes: false
+IncludeBlocks: Preserve
+
+

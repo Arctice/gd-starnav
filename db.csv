@@ -1,4 +1,9 @@
 Constellation,Size,Purple,Red,Green,Yellow,Blue,Ratio,Purple Req,Red Req,Green Req,Yellow Req,Blue Req,Total Req,Net Purple Req,Net Red Req,Net Green Req,Net Yellow Req,Net Blue Req,Net Tot Req
+P,1,1,0,0,0,0,0,0,0,0,0,0,
+R,1,0,1,0,0,0,0,0,0,0,0,0,
+G,1,0,0,1,0,0,0,0,0,0,0,0,
+Y,1,0,0,0,1,0,0,0,0,0,0,0,
+B,1,0,0,0,0,1,0,0,0,0,0,0,
 Affliction,7,1,0,1,0,0,3.5,4,3,4,0,0,11,3,3,3,0,0,9
 Akeron's Scorpion,5,0,0,5,0,0,1,0,0,1,0,0,1,0,0,0,0,0,0
 Alladrah's Phoenix,5,2,0,2,0,0,1.25,0,0,6,3,6,15,0,0,4,3,6,13
