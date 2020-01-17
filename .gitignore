@@ -1,0 +1,3 @@
+build/*
+/emsdk/
+/starnav/resources/public/cljs-out/

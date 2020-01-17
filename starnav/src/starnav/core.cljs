@@ -22,33 +22,44 @@
  "Ulo the Keeper of the Waters" "Ulzaad, Herald of Korvaak" "Viper" "Vulture"
  "Wendigo" "Widow" "Wolverine" "Wraith" "Wretch"])
 
-(def wasm (atom nil))
-(defn new-strvec []
-  (let [ctor (.-strvec (deref wasm))]
-    (new ctor)))
-(defn build-strvec
-  ([ss] (build-strvec (new-strvec) ss))
-  ([vec ss]
-   (if (seq ss)
-     (do (.push-back vec (first ss))
-         (recur vec (rest ss)))
-     vec)))
-(defn collect-strvec [vec]
-  (let [size (.size vec)]
-    (loop [out []
-           i 0]
-      (if (< i size)
-        (recur (conj out (.get vec i)) (inc i))
-        out))))
-(defn solve [devotion constraints]
-  (let [strvec (build-strvec constraints)
-        solution (.solve (deref wasm) devotion strvec)]
-    (collect-strvec solution)))
+(defonce wasm (atom (new js/Worker "worker.js")))
+(def wasm-ready (atom false))
+(defn on-load []
+  (reset! wasm-ready true)
+  (println "wasm thread ready"))
 
-(defn on-load [module] (reset! wasm module))
-(defn solver-ready [] (not (= nil (deref wasm))))
+(def next-token (atom 0))
+(def awaits (atom {}))
+(defn send-job [name args callback]
+  (let [token (swap! next-token inc)]
+    (.postMessage (deref wasm) (array name (clj->js args) token))
+    (swap! awaits assoc token callback)
+    token))
 
-(.then (js/wasm) on-load)
+(defn on-result [data]
+  (let [token (aget data "token")
+        result (aget data "result")
+        callback ((deref awaits) token)]
+    (swap! awaits dissoc token)
+    (callback token result)))
+
+(defn thread-msg-handler [msg]
+  (let [data (.-data msg)
+        name (aget data "msg")]
+    (case name
+      "ready" (on-load)
+      "result" (on-result data)
+      (println "worker msg:" name))))
+
+(aset (deref wasm) 'onerror (fn [err] (println "worker error:" (.-message err))))
+(aset (deref wasm) 'onmessage thread-msg-handler)
+(.postMessage (deref wasm) (array "init"))
+
+(defn solve [devotion constraints callback]
+  (let [strvec (clj->js constraints)]
+    (send-job "solve" [devotion strvec] callback)))
+
+(defn solver-ready [] (deref wasm-ready))
 
 (defn choice-checkbox [name]
   (str  "<label class=\"label\">" "<input type=\"checkbox\" class=\"selectable\"
@@ -79,7 +90,6 @@
     (.setAttribute box "class" "selectable")
     (aset box "disabled" false)))
 
-
 (defn find-unavailable [selected available]
   (let [available (set available)
         selected (set selected)
@@ -103,14 +113,19 @@
     bound))
 
 (def previous-ui-state (atom []))
+
+(defn solution-callback [token result]
+  (let [solution (js->clj result)]
+    (disable-unlisted (find-unavailable (selected) solution))))
+
 (defn user-update []
   (let [selections (selected)
         devotion (devotion-limit)
-        ui-state [selections devotion]]
-    (when (and (solver-ready) (not (= ui-state (deref previous-ui-state))))
+        ui-state [selections devotion]
+        changed (not (= ui-state (deref previous-ui-state)))]
+    (when (and (solver-ready) changed)
       (reset! previous-ui-state ui-state)
-      (let [solution (solve devotion selections)]
-        (disable-unlisted (find-unavailable selections solution))))))
+      (solve devotion selections solution-callback))))
 
 (aset (app-dom) 'innerHTML (render-selections))
 (aset (app-dom) 'align "center")

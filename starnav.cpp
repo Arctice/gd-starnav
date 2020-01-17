@@ -73,6 +73,11 @@ struct devotion {
     i8 points{55};
     affinity affinity{};
 
+    bool operator==(const devotion& rhs) const
+    {
+        return chosen == rhs.chosen && points == rhs.points;
+    }
+
     bool is_chosen(const starset& id) const { return (chosen & id).any(); }
     bool is_unchosen(const stardata& stars) const
     {
@@ -149,6 +154,12 @@ auto hash_starset(const starset& v)
            ^ std::hash<unsigned long long>{}(u);
 }
 
+namespace std{
+template <> struct hash<devotion> {
+    auto operator()(const devotion& v) const { return hash_starset(v.chosen); }
+};
+};
+
 class bloom_filter {
     static constexpr auto filter_size = 16777216;
     static constexpr auto hashes = 20;
@@ -183,7 +194,7 @@ struct set_interface {
     bool query(const starset& v) { return set.count(v); }
 };
 
-using visited = bloom_filter;
+using visited = set_interface;
 
 devotion incomplete_state(int max_devotion,
                           const std::vector<std::string>& constraints)
@@ -199,12 +210,6 @@ devotion incomplete_state(int max_devotion,
     }
 
     return state;
-}
-
-int affinity_heuristic(const devotion& state)
-{
-    auto affinity = state.missing_affinity();
-    return std::accumulate(affinity.begin(), affinity.end(), 0);
 }
 
 auto cmp_first
@@ -235,7 +240,6 @@ bool reachable(int max_devotion, devotion start)
     visited seen;
     seen.add(start.chosen);
 
-    int processed = 0;
     while (!queue.empty()) {
         std::pop_heap(queue.begin(), queue.end(), cmp_first);
         auto [points, path, node] = queue.back();
@@ -265,36 +269,50 @@ bool reachable(int max_devotion, devotion start)
     return false;
 }
 
+short affinity_heuristic(const devotion& state)
+{
+    auto affinity = state.missing_affinity();
+    return std::accumulate(affinity.begin(), affinity.end(), 0);
+}
+
 std::optional<devotion>
 possible_completion(int max_devotion,
-                    const std::vector<std::string>& constraints)
+                    const std::vector<std::string>& constraints,
+                    starset inaccessible)
 {
     auto incomplete = incomplete_state(max_devotion, constraints);
     if (incomplete.points < 0) return {};
     std::vector<std::tuple<short, devotion>> queue{
-        {affinity_heuristic(incomplete), incomplete}};
+        {-affinity_heuristic(incomplete), incomplete}};
     visited seen;
     seen.add(incomplete.chosen);
 
+    int processed{};
     while (!queue.empty()) {
         std::pop_heap(queue.begin(), queue.end(), cmp_first);
         auto [cost, node] = queue.back();
         queue.pop_back();
 
-        if (cost == 0 and reachable(max_devotion, node))
+        processed++;
+        if (cost == 0 and reachable(max_devotion, node)) {
+            // std::cerr << "y " << processed << "\n";
             return node;
+        }
 
         for (const auto& stars : starmap) {
             if (not node.is_unchosen(stars)) continue;
+            if ((stars.first & inaccessible).any()) continue;
             auto next = node.add(stars);
+            auto next_cost = -affinity_heuristic(next);
+            if (next_cost <= cost) continue;
             if (seen.query(next.chosen)) continue;
             seen.add(next.chosen);
-            auto cost = -affinity_heuristic(next);
-            queue.push_back({cost, next});
+            queue.push_back({next_cost, next});
             std::push_heap(queue.begin(), queue.end(), cmp_first);
         }
     }
 
+    // std::cerr << "n " << processed << "\n";
     return {};
 };
 
@@ -321,25 +339,19 @@ struct action {
     starid stars;
 };
 
-void reach(devotion start)
+std::optional<persistent_list<action>> reach(devotion start)
 {
     std::vector<std::tuple<short, devotion, persistent_list<action>>> queue{
         {start.points, start, {}}};
     visited seen;
     seen.add(start.chosen);
 
-    int processed = 0;
     while (!queue.empty()) {
         std::pop_heap(queue.begin(), queue.end(), cmp_first);
         auto [points, node, path] = queue.back();
         queue.pop_back();
 
-        processed++;
-        if (node.points == 55) {
-            // std::cerr << processed << " time\n";
-            // std::cerr << queue.size() << " memory\n";
-            return;
-        }
+        if (node.points == 55) { return {path}; }
 
         for (const auto& stars : starmap) {
             auto next = node;
@@ -365,14 +377,13 @@ void reach(devotion start)
         }
     }
 
-    // std::cerr << processed << "\n";
-    std::cerr << "not found!\n";
+    return {};
 }
 
 void print_choices(const devotion& state)
 {
     for (const auto& [id, name] : id_name_map) {
-        if (state.is_chosen(id)) std::cout << name << "\n";
+        if (state.is_chosen(id)) std::cout << name << std::endl;
     }
 }
 
@@ -382,10 +393,67 @@ template <typename S, typename V> bool contains(const S& collection, const V& v)
            != collection.end();
 }
 
+template <typename K, typename V> class cache {
+    std::unordered_map<K, std::pair<V, short>> data;
+    std::vector<K> random_access;
+    unsigned short access_counter{};
+    std::size_t max_load;
+
+    void evict()
+    {
+        auto a = std::rand() % random_access.size();
+        auto b = std::rand() % random_access.size();
+        auto least_recent = data.at(random_access[a]).second
+                                    <= data.at(random_access[b]).second
+                                ? a
+                                : b;
+
+        data.erase(random_access[least_recent]);
+        std::swap(random_access[least_recent], random_access.back());
+        random_access.pop_back();
+    }
+
+public:
+    cache() : max_load(8 * 1024 / sizeof(V)) { std::srand(max_load); }
+
+    bool contains(const K& key) const { return data.find(key) != data.end(); };
+
+    void store(const K& key, const V& val)
+    {
+        if (data.size() > max_load) evict();
+
+        if (!contains(key)) random_access.push_back(key);
+        data[key] = {val, access_counter++};
+    }
+
+    const V& load(const K& key)
+    {
+        auto& storage = data.at(key);
+        storage.second = access_counter++;
+        return storage.first;
+    }
+};
+
+cache<devotion, starset> solution_cache;
+
+std::vector<std::string> unpack_stars(const starset& set){
+    std::vector<std::string> out;
+    for (const auto& stars : starmap) {
+        const auto& [id, data] = stars;
+        auto name = str_name(id);
+        if ((set & id).any()) out.push_back(name);
+    }
+    return out;
+}
+
 std::vector<std::string> possible_choices(int max_devotion,
                                           std::vector<std::string> constraints)
 {
     auto reference_state = incomplete_state(max_devotion, constraints);
+    if (solution_cache.contains(reference_state))
+        return unpack_stars(solution_cache.load(reference_state));
+
+    auto inaccessible = starset{};
     auto results = std::vector<std::string>{};
 
     for (const auto& stars : starmap) {
@@ -394,11 +462,19 @@ std::vector<std::string> possible_choices(int max_devotion,
         if (contains(constraints, name)) continue;
         if (reference_state.points < data.size) continue;
         constraints.push_back(name);
-        if (possible_completion(max_devotion, constraints)) {
-            results.push_back(name);
+        // std::cerr << name << "\n";
+
+        auto accessible
+            = possible_completion(max_devotion, constraints, inaccessible);
+        if (accessible) { results.push_back(name); }
+        else {
+            inaccessible |= id;
         }
         constraints.pop_back();
     }
+
+    solution_cache.store(reference_state,
+                         incomplete_state(max_devotion, results).chosen);
 
     return results;
 }
@@ -412,19 +488,49 @@ public:
     }
 } _;
 
-extern "C" int main()
-{
-    // devotion z;
-    // for (auto& name : constraints)
-    //     z = z.add(starmap[compact_id[name_id(name)]]);
-    // reach(z);
-}
-
 std::vector<std::string> solve(int max_devotion,
                                std::vector<std::string> constraints)
 {
     auto solution = possible_choices(max_devotion, constraints);
     return solution;
+}
+
+struct devotion_step {
+    bool is_add;
+    std::string starname;
+};
+
+std::vector<devotion_step> find_path(int max_devotion,
+                                     std::vector<std::string> constraints)
+{
+    auto viable_state = possible_completion(max_devotion, constraints, {});
+    if (not viable_state) return {};
+    auto search = reach(*viable_state);
+    if (not search) return {};
+
+    std::vector<devotion_step> result{};
+
+    auto path = *search;
+    while (path) {
+        path = path->head;
+        bool is_add = path->value.step == change::add;
+        auto name = str_name(path->value.stars);
+        result.push_back({is_add, name});
+    }
+
+    return result;
+}
+
+extern "C" int main()
+{
+    // auto solved = solve(55, constraints);
+    // std::cerr << solved.size() << " solutions\n";
+    // possible_completion(55, constraints);
+
+    // devotion z;
+    // for (auto& name : constraints)
+    //     z = z.add(starmap[compact_id[name_id(name)]]);
+    // reach(z);
 }
 
 #ifdef __EMSCRIPTEN__

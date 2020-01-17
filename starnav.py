@@ -205,8 +205,12 @@ def reach(state):
     return None
 
 
+def euclid(vec):
+    return sum(x * x for x in vec)**.5
+
+
 def affinity_heuristic(state):
-    return sum(state.missing_affinity())
+    return euclid(state.missing_affinity())
 
 
 def valid_states(constraints):
@@ -214,18 +218,27 @@ def valid_states(constraints):
     queue = [(affinity_heuristic(initial), initial)]
     seen = set((initial.chosen, ))
 
+    processed = 0
+    best = queue[0][0]
     while queue:
         cost, node = heapq.heappop(queue)
+        processed += 1
         if cost == 0:
+            print('y', processed)
             yield node
             continue
 
         adds = (node.add(stars) for stars in node.unchosen())
         new = tuple(state for state in adds if state.chosen not in seen)
-        seen.update((state.chosen for state in new))
+        seen.update({state.chosen for state in new})
         for next in new:
-            cost = affinity_heuristic(next)
-            heapq.heappush(queue, (cost, next))
+            next_cost = affinity_heuristic(next)
+            if next_cost >= cost: continue
+            elif next_cost < best:
+                best = next_cost
+                print(best, next, len(seen), len(queue))
+            heapq.heappush(queue, (next_cost, next))
+    print('n', processed)
 
 
 # options_cache = sets.sperner_family()
@@ -281,17 +294,23 @@ def list_choices(constraints):
 
 
 constraints = [
-    "Sailor's Guide",
-    "Revenant",
-    "Rhowan's Crown",
-    "Scales of Ulcama",
     'Alladrah\'s Phoenix',
+    "Gallows",
     'Hyrian, Guardian of the Celestial Gates',
+    "Revenant",
+    "Scales of Ulcama",
+    "Tempest",
+    "Eel",
+    # "Dryad",
+    # "Hammer",
 ]
 
 constraints = list(name_id(name) for name in constraints)
 
 # list_choices(constraints)
-print(recreate_path(constraints))
+# print(recreate_path(constraints))
 # z = possible(constraints)
 # z = next(valid_states(constraints))
+
+z = incomplete_state(constraints)
+cost = affinity_heuristic(z)
