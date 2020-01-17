@@ -185,9 +185,11 @@ struct set_interface {
 
 using visited = bloom_filter;
 
-devotion incomplete_state(const std::vector<std::string>& constraints)
+devotion incomplete_state(int max_devotion,
+                          const std::vector<std::string>& constraints)
 {
     devotion state;
+    state.points = max_devotion;
     for (const auto& name : constraints) {
         auto id = name_id(name);
         auto stars = starmap.at(compact_id[id]);
@@ -226,7 +228,7 @@ short tension(devotion state)
     return total_tension;
 }
 
-bool reachable(devotion start)
+bool reachable(int max_devotion, devotion start)
 {
     std::vector<std::tuple<short, short, devotion>> queue{
         {start.points, 0, start}};
@@ -239,7 +241,7 @@ bool reachable(devotion start)
         auto [points, path, node] = queue.back();
         queue.pop_back();
 
-        if (node.points == 55) { return true; }
+        if (node.points == max_devotion) { return true; }
 
         for (const auto& stars : starmap) {
             auto next = node;
@@ -264,9 +266,10 @@ bool reachable(devotion start)
 }
 
 std::optional<devotion>
-possible_completion(const std::vector<std::string>& constraints)
+possible_completion(int max_devotion,
+                    const std::vector<std::string>& constraints)
 {
-    auto incomplete = incomplete_state(constraints);
+    auto incomplete = incomplete_state(max_devotion, constraints);
     if (incomplete.points < 0) return {};
     std::vector<std::tuple<short, devotion>> queue{
         {affinity_heuristic(incomplete), incomplete}};
@@ -278,7 +281,8 @@ possible_completion(const std::vector<std::string>& constraints)
         auto [cost, node] = queue.back();
         queue.pop_back();
 
-        if (cost == 0 and reachable(node)) return node;
+        if (cost == 0 and reachable(max_devotion, node))
+            return node;
 
         for (const auto& stars : starmap) {
             if (not node.is_unchosen(stars)) continue;
@@ -378,9 +382,10 @@ template <typename S, typename V> bool contains(const S& collection, const V& v)
            != collection.end();
 }
 
-std::vector<std::string> possible_choices(std::vector<std::string> constraints)
+std::vector<std::string> possible_choices(int max_devotion,
+                                          std::vector<std::string> constraints)
 {
-    auto reference_state = incomplete_state(constraints);
+    auto reference_state = incomplete_state(max_devotion, constraints);
     auto results = std::vector<std::string>{};
 
     for (const auto& stars : starmap) {
@@ -389,7 +394,9 @@ std::vector<std::string> possible_choices(std::vector<std::string> constraints)
         if (contains(constraints, name)) continue;
         if (reference_state.points < data.size) continue;
         constraints.push_back(name);
-        if (possible_completion(constraints)) { results.push_back(name); }
+        if (possible_completion(max_devotion, constraints)) {
+            results.push_back(name);
+        }
         constraints.pop_back();
     }
 
@@ -413,9 +420,10 @@ extern "C" int main()
     // reach(z);
 }
 
-std::vector<std::string> solve(std::vector<std::string> constraints)
+std::vector<std::string> solve(int max_devotion,
+                               std::vector<std::string> constraints)
 {
-    auto solution = possible_choices(constraints);
+    auto solution = possible_choices(max_devotion, constraints);
     return solution;
 }
 

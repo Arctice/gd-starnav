@@ -1,4 +1,14 @@
 
+.desc {
+    font-size: 20px;
+    margin: 4px;
+    display: inline-block;
+}
+
+#devotion-max {
+    font-size: 20px;
+}
+
 .selectable + span{
     border: 2px;
     border-style: solid;
@@ -40,4 +50,5 @@
 input[type=checkbox] {
 display: none;
 }
+
 

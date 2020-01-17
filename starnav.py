@@ -281,16 +281,12 @@ def list_choices(constraints):
 
 
 constraints = [
-    'Affliction',
-    # 'Behemoth',
-    # "Typhos, the Jailor of Souls",
-    # 'P',
-    # 'Bat',
-    # 'R','G','B','Y',
-    # 'Alladrah\'s Phoenix',
-    # 'Staff of Rattosh',
-    # 'Hyrian, Guardian of the Celestial Gates',
-    # "Assassin's Blade",
+    "Sailor's Guide",
+    "Revenant",
+    "Rhowan's Crown",
+    "Scales of Ulcama",
+    'Alladrah\'s Phoenix',
+    'Hyrian, Guardian of the Celestial Gates',
 ]
 
 constraints = list(name_id(name) for name in constraints)

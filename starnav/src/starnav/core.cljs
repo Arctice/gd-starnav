@@ -40,9 +40,9 @@
       (if (< i size)
         (recur (conj out (.get vec i)) (inc i))
         out))))
-(defn solve [constraints]
+(defn solve [devotion constraints]
   (let [strvec (build-strvec constraints)
-        solution (.solve (deref wasm) strvec)]
+        solution (.solve (deref wasm) devotion strvec)]
     (collect-strvec solution)))
 
 (defn on-load [module] (reset! wasm module))
@@ -94,24 +94,29 @@
         (disable-checkbox star)
         (enable-checkbox star)))))
 
-(def previously-selected (atom []))
+(defn devotion-field [] (dom/getElement "devotion-max"))
+(defn devotion-limit []
+  (let [field (.-value (devotion-field))
+        parse (js/parseInt field 10)
+        val (if (js/isNaN parse) 55 parse)
+        bound (max 0 (min 55 val))]
+    bound))
+
+(def previous-ui-state (atom []))
 (defn user-update []
-  (let [selections (selected)]
-    (when (not (= selections (deref previously-selected)))
-      (reset! previously-selected selections)
-      (let [solution (solve selections)]
+  (let [selections (selected)
+        devotion (devotion-limit)
+        ui-state [selections devotion]]
+    (when (and (solver-ready) (not (= ui-state (deref previous-ui-state))))
+      (reset! previous-ui-state ui-state)
+      (let [solution (solve devotion selections)]
         (disable-unlisted (find-unavailable selections solution))))))
 
 (aset (app-dom) 'innerHTML (render-selections))
 (aset (app-dom) 'align "center")
 (events/removeAll (app-dom))
 (events/listen (app-dom) 'click user-update)
-
-;; todo:
-;; devotion points limit input
-;; devotion display pane
-;; devotion sort/filter? color coding?
-;; show devotion points left, affinity
-;; show path to reach
+(events/removeAll (devotion-field))
+(events/listen (devotion-field) 'input user-update)
 
 (user-update)
