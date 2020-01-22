@@ -9,7 +9,7 @@
     font-size: 20px;
 }
 
-.selectable + span{
+.available + span{
     border: 2px;
     border-style: solid;
     font-size:20px;
@@ -24,13 +24,13 @@
     -webkit-user-select: none;
 }
 
-.selectable:checked + span{
+.available:checked + span{
     border-color: #999;
     background:#000;
     color: #fff;
 }
 
-.unselectable + span{
+.unavailable + span{
     border: 2px;
     border-style: solid;
     font-size:20px;
@@ -41,6 +41,24 @@
     border-color: #999;
     background:#888;
     color: #ddd;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+.pending + span{
+    border: 2px;
+    border-style: solid;
+    font-size:20px;
+    line-height: 1.8;
+    padding: 2px 6px 2px 6px;
+    white-space:nowrap;
+
+    border-color: #aaa;
+    background:#ddd;
+    /* color: #fff; */
+    color: transparent;
 
     user-select: none;
     -moz-user-select: none;

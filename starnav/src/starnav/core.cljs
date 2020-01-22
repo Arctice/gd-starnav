@@ -23,25 +23,45 @@
  "Wendigo" "Widow" "Wolverine" "Wraith" "Wretch"])
 
 (defonce wasm (atom (new js/Worker "worker.js")))
-(def wasm-ready (atom false))
+(defonce wasm-ready (atom false))
 (defn on-load []
   (reset! wasm-ready true)
   (println "wasm thread ready"))
 
 (def next-token (atom 0))
 (def awaits (atom {}))
+(def jobs (atom #queue []))
+(def ready-flags (atom [true]))
+
+(defn pending-jobs [] (not (empty? (deref jobs))))
+(defn thread-ready [id] (nth (deref ready-flags) 0))
+(defn thread-mark [id state] (swap! ready-flags assoc id state))
+(defn execute-next []
+  (when (and (pending-jobs) (thread-ready 0))
+    (let [[name token args callback] (peek (deref jobs))]
+      (swap! jobs pop)
+      (swap! awaits assoc token callback)
+      (thread-mark 0 false)
+      (.postMessage (deref wasm) (array name (clj->js args) token)))))
+
 (defn send-job [name args callback]
   (let [token (swap! next-token inc)]
-    (.postMessage (deref wasm) (array name (clj->js args) token))
-    (swap! awaits assoc token callback)
+    (swap! jobs conj (list name token args callback))
+    (execute-next)
     token))
+
+(defn cancel-job [token] (swap! awaits dissoc token))
+(defn cancel-all-jobs [] (reset! jobs #queue []) (reset! awaits {}))
 
 (defn on-result [data]
   (let [token (aget data "token")
         result (aget data "result")
         callback ((deref awaits) token)]
-    (swap! awaits dissoc token)
-    (callback token result)))
+    (thread-mark 0 true)
+    (execute-next)
+    (when (not (nil? callback))
+      (swap! awaits dissoc token)
+      (callback token result))))
 
 (defn thread-msg-handler [msg]
   (let [data (.-data msg)
@@ -58,11 +78,14 @@
 (defn solve [devotion constraints callback]
   (let [strvec (clj->js constraints)]
     (send-job "solve" [devotion strvec] callback)))
+(defn solve-one [devotion constraints choice callback]
+  (let [strvec (clj->js constraints)]
+    (send-job "solve-one" [devotion strvec choice] callback)))
 
 (defn solver-ready [] (deref wasm-ready))
 
 (defn choice-checkbox [name]
-  (str  "<label class=\"label\">" "<input type=\"checkbox\" class=\"selectable\"
+  (str  "<label class=\"label\">" "<input type=\"checkbox\" class=\"available\"
          id=\"ch-" name "\"><span>" name "</span></label> "))
 (defn render-selections []
   (str "<div id=\"selection\" style=\"display: inline-block; text-align: left;\">"
@@ -78,31 +101,12 @@
     (if (nil? checkbox)
       false
       (.-checked checkbox))))
-(defn selected []
-  (vec (filter is-checked stars)))
+(defn selected [] (set (filter is-checked stars)))
 
-(defn disable-checkbox [name]
+(defn checkbox-set-state [name class available]
   (let [box (get-checkbox name)]
-    (.setAttribute box "class" "unselectable")
-    (aset box "disabled" true)))
-(defn enable-checkbox [name]
-  (let [box (get-checkbox name)]
-    (.setAttribute box "class" "selectable")
-    (aset box "disabled" false)))
-
-(defn find-unavailable [selected available]
-  (let [available (set available)
-        selected (set selected)
-        unavailable (filter #(and (not (selected %))
-                                 (not (available %)))
-                            stars)]
-    unavailable))
-(defn disable-unlisted [unavailable]
-  (let [unavailable (set unavailable)]
-    (doseq [star stars]
-      (if (unavailable star)
-        (disable-checkbox star)
-        (enable-checkbox star)))))
+    (.setAttribute box "class" class)
+    (aset box "disabled" (not available))))
 
 (defn devotion-field [] (dom/getElement "devotion-max"))
 (defn devotion-limit []
@@ -112,12 +116,26 @@
         bound (max 0 (min 55 val))]
     bound))
 
+(def pending-updates (atom {}))
+(defn cancel-pending []
+  (cancel-all-jobs)
+  (reset! pending-updates {}))
+
+(defn update-choice [token available]
+  (let [choice ((deref pending-updates) token)
+        update (swap! pending-updates dissoc token)]
+    (checkbox-set-state
+     choice (if available "available" "unavailable") available)))
+
+(defn check-all [devotion selections]
+  (cancel-pending)
+  (doseq [choice (filter #(not (selections %)) stars)]
+    (checkbox-set-state choice "pending" false)
+    (let [token (solve-one devotion selections choice update-choice)]
+      (swap! pending-updates assoc token choice))))
+
+
 (def previous-ui-state (atom []))
-
-(defn solution-callback [token result]
-  (let [solution (js->clj result)]
-    (disable-unlisted (find-unavailable (selected) solution))))
-
 (defn user-update []
   (let [selections (selected)
         devotion (devotion-limit)
@@ -125,7 +143,9 @@
         changed (not (= ui-state (deref previous-ui-state)))]
     (when (and (solver-ready) changed)
       (reset! previous-ui-state ui-state)
-      (solve devotion selections solution-callback))))
+      (when (not (empty? selections))
+          (check-all devotion selections)))))
+
 
 (aset (app-dom) 'innerHTML (render-selections))
 (aset (app-dom) 'align "center")

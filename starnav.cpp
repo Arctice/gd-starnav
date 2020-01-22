@@ -495,6 +495,21 @@ std::vector<std::string> solve(int max_devotion,
     return solution;
 }
 
+bool valid_choice(int max_devotion, std::vector<std::string> constraints,
+                  std::string new_star)
+{
+    auto reference_state = incomplete_state(max_devotion, constraints);
+    auto results = std::vector<std::string>{};
+
+    const auto& [id, data] = starmap.at(compact_id.at(name_id(new_star)));
+    if (contains(constraints, new_star)) return false;
+    if (reference_state.points < data.size) return false;
+
+    constraints.push_back(new_star);
+    auto accessible = possible_completion(max_devotion, constraints, {});
+    return (bool)accessible;
+}
+
 struct devotion_step {
     bool is_add;
     std::string starname;
@@ -543,6 +558,7 @@ EMSCRIPTEN_BINDINGS(starnav)
 {
     register_vector<std::string>("strvec");
     function("solve", &solve);
+    function("valid_choice", &valid_choice);
 }
 
 #endif
