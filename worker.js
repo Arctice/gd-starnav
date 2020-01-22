@@ -1,16 +1,19 @@
 self.importScripts("starnav.js");
 
 var module;
+var threadid;
 
 function ready(){ return module !== undefined; }
 
 function message(msg, data, token){
     postMessage({"msg": msg,
                  "result": data,
-                 "token": token});
+                 "token": token,
+                 "thread-id": thread_id});
 }
 
-function init(){
+function init(data){
+    thread_id = data[0];
     if(ready()) return;
     wasm().then(function(wasm){ module = wasm; message("ready"); });
 }
@@ -55,7 +58,7 @@ onmessage = function(msg){
     var data = msg.data[1];
     var token = msg.data[2];
 
-    if(dispatch == "init"){ return init(); }
+    if(dispatch == "init"){ return init(data); }
     if(!ready()){ return message(false); }
     if(dispatch == "solve"){ return solve(data, token); }
     if(dispatch == "solve-one"){ return solve_one(data, token); }
