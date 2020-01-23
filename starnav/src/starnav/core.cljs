@@ -1,8 +1,8 @@
 (ns ^:figwheel-hooks starnav.core
-  (:require
-   [goog.dom :as dom]
-   [goog.events :as events]
-   [clojure.string :as str]))
+  (:require [starnav.sets :as sets]
+            [goog.dom :as dom]
+            [goog.events :as events]
+            [clojure.string :as str]))
 
 (def stars [
  "P" "R" "G" "Y" "B" "Affliction" "Akeron's Scorpion" "Alladrah's Phoenix"
@@ -90,12 +90,10 @@
     thread-id))
 
 
-(defn solve [devotion constraints callback]
-  (let [strvec (clj->js constraints)]
-    (send-job "solve" [devotion strvec] callback)))
 (defn solve-one [devotion constraints choice callback]
   (let [strvec (clj->js constraints)]
     (send-job "solve-one" [devotion strvec choice] callback)))
+
 
 (defn choice-checkbox [name]
   (str  "<label class=\"label\">" "<input type=\"checkbox\" class=\"available\"
@@ -129,35 +127,91 @@
         bound (max 0 (min 55 val))]
     bound))
 
+
+(def star-bits (atom {}))
+(defn star-id [star]
+  (if-let [starset ((deref star-bits) star)]
+    starset
+    (let [next-id (count (deref star-bits))
+          starset (sets/bitset-set (sets/make-bitset (count stars)) next-id)]
+      (swap! star-bits assoc star starset)
+      starset)))
+(defn make-starset [stars] (reduce sets/bitset-or (map star-id stars)))
+
+
+(def solution-cache-true (atom []))
+(def solution-cache-false (atom []))
+(defn cache-retrieve [constraints]
+  (let [query (make-starset constraints)
+        available (sets/sperner-contains
+                   (deref solution-cache-true)
+                   query)
+        unavailable (sets/sperner-contains
+                     (deref solution-cache-false)
+                     (sets/bitset-not query))]
+    (cond
+      available true
+      unavailable false
+      :else nil)))
+(defn cache-update [constraints result]
+  (let [cache (case result
+                true solution-cache-true
+                false solution-cache-false)
+        starset (case result
+                  true (make-starset constraints)
+                  false (sets/bitset-not (make-starset constraints)))]
+    (swap! cache sets/sperner-add starset)))
+(defn cache-invalidate []
+  (reset! solution-cache-true [])
+  (reset! solution-cache-false []))
+
+
 (def pending-updates (atom {}))
 (defn cancel-pending []
   (cancel-all-jobs)
   (reset! pending-updates {}))
 
+(defn direct-update [choice available]
+  (checkbox-set-state choice
+                      (if available "available" "unavailable")
+                      available))
+
 (defn update-choice [token available]
-  (let [choice ((deref pending-updates) token)
+  (let [[selections choice] ((deref pending-updates) token)
         update (swap! pending-updates dissoc token)]
-    (checkbox-set-state
-     choice (if available "available" "unavailable") available)))
+    (cache-update (conj selections choice) available)
+    (direct-update choice available)))
+
+(defn dispatch-update [devotion selections choice]
+  (checkbox-set-state choice "pending" false)
+  (let [token (solve-one devotion selections choice update-choice)]
+    (swap! pending-updates assoc token [selections choice])))
 
 (defn check-all [devotion selections]
   (cancel-pending)
   (doseq [choice (filter #(not (selections %)) stars)]
-    (checkbox-set-state choice "pending" false)
-    (let [token (solve-one devotion selections choice update-choice)]
-      (swap! pending-updates assoc token choice))))
+    (let [cached (cache-retrieve (conj selections choice))]
+      (if (nil? cached)
+          (dispatch-update devotion selections choice)
+          (direct-update choice cached)))))
 
 
-(def previous-ui-state (atom []))
+(def previous-selections (atom []))
+(def previous-devotion (atom []))
 (defn user-update []
   (let [selections (selected)
         devotion (devotion-limit)
-        ui-state [selections devotion]
-        changed (not (= ui-state (deref previous-ui-state)))]
+        selections-changed (not (= selections (deref previous-selections)))
+        devotion-changed (not (= devotion (deref previous-devotion)))
+        changed (or selections-changed devotion-changed)]
+    (when devotion-changed
+      (reset! previous-devotion devotion)
+      (cache-invalidate))
     (when (and (deref solver-ready) changed)
-      (reset! previous-ui-state ui-state)
+      (reset! previous-selections selections)
       (when (not (empty? selections))
-          (check-all devotion selections)))))
+        (check-all devotion selections)))))
+
 
 (doall (repeatedly js/navigator.hardwareConcurrency spawn-thread))
 
