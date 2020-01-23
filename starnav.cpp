@@ -11,13 +11,16 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <queue>
+#include "hashmap/phmap.h"
 
 #include "starnav.h"
+
 
 std::ostream& operator<<(std::ostream& ss, const affinity& v)
 {
     ss << '(';
-    for (int n(0); n < 4; ++n) ss << (int)v[n] << ", ";
+    for (std::size_t n(0); n < 4; ++n) ss << (int)v[n] << ", ";
     return ss << (int)v[4] << ')';
 }
 
@@ -81,11 +84,11 @@ struct devotion {
     bool is_chosen(const starset& id) const { return (chosen & id).any(); }
     bool is_unchosen(const stardata& stars) const
     {
-        return not is_chosen(stars.first) and stars.second.size <= points;
+        return stars.second.size <= points and not is_chosen(stars.first);
     }
     bool is_open(const constellation& stars) const
     {
-        auto diff = vec_op(std::minus{}, affinity, stars.cost);
+        auto diff = vec_op(std::minus<i8>{}, affinity, stars.cost);
         bool affinity = std::all_of(diff.begin(), diff.end(),
                                     [](i8 v) { return v >= 0; });
         bool points = stars.size <= this->points;
@@ -107,7 +110,7 @@ struct devotion {
     {
         i8 points_ = points - stars.second.size;
         auto chosen_ = chosen | stars.first;
-        auto affinity_ = vec_op(std::plus{}, affinity, stars.second.gain);
+        auto affinity_ = vec_op(std::plus<i8>{}, affinity, stars.second.gain);
         return devotion{chosen_, points_, affinity_};
     };
 
@@ -115,7 +118,7 @@ struct devotion {
     {
         i8 points_ = points + stars.second.size;
         auto chosen_ = chosen ^ stars.first;
-        auto affinity_ = vec_op(std::minus{}, affinity, stars.second.gain);
+        auto affinity_ = vec_op(std::minus<i8>{}, affinity, stars.second.gain);
         return devotion{chosen_, points_, affinity_};
     };
 
@@ -131,9 +134,9 @@ struct devotion {
         return total;
     }
 
-    ::affinity missing_affinity() const
+    ::affinity missing_affinity(::affinity cost) const
     {
-        auto cost = vec_op(std::minus{}, affinity_cost(), affinity);
+        cost = vec_op(std::minus<i8>{}, cost, affinity);
         auto missing = vec_op(
             [](const auto& lhs, const auto& rhs) { return std::max(lhs, rhs); },
             ::affinity{}, cost);
@@ -141,57 +144,33 @@ struct devotion {
     }
 };
 
-auto hash_starset(const starset& v)
-{
+struct hash_starset {
+    auto operator()(const starset& v) const
+    {
 #ifndef __EMSCRIPTEN__
-    return std::hash<starset>{}(v);
+        return std::hash<starset>{}(v);
+#else
+        static const starset lower_bits{
+            std::numeric_limits<unsigned long long>::max()};
+        auto l = ((v & lower_bits)).to_ullong();
+        auto u = (v >> 64).to_ullong();
+        return std::hash<unsigned long long>{}(l)
+               ^ std::hash<unsigned long long>{}(u);
 #endif
-    static const starset lower_bits{
-        std::numeric_limits<unsigned long long>::max()};
-    auto l = ((v & lower_bits)).to_ullong();
-    auto u = (v >> 64).to_ullong();
-    return std::hash<unsigned long long>{}(l)
-           ^ std::hash<unsigned long long>{}(u);
-}
+    }
+};
 
 namespace std{
 template <> struct hash<devotion> {
-    auto operator()(const devotion& v) const { return hash_starset(v.chosen); }
+    auto operator()(const devotion& v) const { return hash_starset{}(v.chosen); }
 };
-};
-
-class bloom_filter {
-    static constexpr auto filter_size = 16777216;
-    static constexpr auto hashes = 20;
-    std::bitset<filter_size> field{0};
-
-public:
-    void add(const starset& v_)
-    {
-        auto v = starset{v_};
-        for (auto k(0); k < hashes; ++k) {
-            v.flip(k);
-            auto hash = hash_starset(v) % filter_size;
-            field.set(hash);
-        }
-    }
-
-    bool query(const starset& v_)
-    {
-        auto v = starset{v_};
-        for (auto k(0); k < hashes; ++k) {
-            v.flip(k);
-            auto hash = hash_starset(v) % filter_size;
-            if (!field.test(hash)) return false;
-        }
-        return true;
-    }
+    
 };
 
 struct set_interface {
-    std::unordered_set<starset> set;
+    std::unordered_set<starset, hash_starset> set;
     void add(const starset& v) { set.insert(v); }
-    bool query(const starset& v) { return set.count(v); }
+    bool query(const starset& v) const { return set.count(v); }
 };
 
 using visited = set_interface;
@@ -206,7 +185,7 @@ devotion incomplete_state(int max_devotion,
         auto stars = starmap.at(compact_id[id]);
         state.chosen |= stars.first;
         state.points -= stars.second.size;
-        state.affinity = vec_op(std::plus{}, state.affinity, stars.second.gain);
+        state.affinity = vec_op(std::plus<i8>{}, state.affinity, stars.second.gain);
     }
 
     return state;
@@ -214,7 +193,7 @@ devotion incomplete_state(int max_devotion,
 
 auto cmp_first
     = [](auto& lhs, auto& rhs) { return std::get<0>(lhs) < std::get<0>(rhs); };
-auto max_queue_size = 50000;
+std::size_t max_queue_size = 50000;
 
 short tension(devotion state)
 {
@@ -223,10 +202,10 @@ short tension(devotion state)
         const auto& [id, data] = stars;
         if (not state.is_chosen(id)) continue;
         if (state.is_removable(stars)) continue;
-        auto support = vec_op(std::minus{}, state.affinity, data.gain);
+        auto support = vec_op(std::minus<i8>{}, state.affinity, data.gain);
         auto tension
             = vec_op([](const auto& lhs,
-                        const auto& rhs) { return std::max(0, lhs - rhs); },
+                        const auto& rhs) { return std::max<i8>(0, lhs - rhs); },
                      data.cost, support);
         total_tension += std::accumulate(tension.begin(), tension.end(), 0);
     }
@@ -269,50 +248,62 @@ bool reachable(int max_devotion, devotion start)
     return false;
 }
 
-short affinity_heuristic(const devotion& state)
+i8 affinity_heuristic(const devotion& state, const affinity& cost)
 {
-    auto affinity = state.missing_affinity();
-    return std::accumulate(affinity.begin(), affinity.end(), 0);
+    auto affinity = state.missing_affinity(cost);
+    return -std::accumulate(affinity.begin(), affinity.end(), (i8)0);
 }
+
+struct search_item{
+    i8 heuristic;
+    affinity cached_cost;
+    devotion state;
+
+    bool operator<(const search_item& rhs) const
+    {
+        return heuristic < rhs.heuristic;
+    };
+};
 
 std::optional<devotion>
 possible_completion(int max_devotion,
-                    const std::vector<std::string>& constraints,
-                    starset inaccessible)
+                    const std::vector<std::string>& constraints)
 {
     auto incomplete = incomplete_state(max_devotion, constraints);
     if (incomplete.points < 0) return {};
-    std::vector<std::tuple<short, devotion>> queue{
-        {-affinity_heuristic(incomplete), incomplete}};
-    visited seen;
-    seen.add(incomplete.chosen);
+    auto affinity_cost = incomplete.affinity_cost();
 
-    int processed{};
+    std::priority_queue<search_item, std::vector<search_item>> queue{};
+    queue.push({affinity_heuristic(incomplete, affinity_cost), affinity_cost,
+                incomplete});
+
+    phmap::flat_hash_set<starset, hash_starset> seen;
+    seen.insert(incomplete.chosen);
+
     while (!queue.empty()) {
-        std::pop_heap(queue.begin(), queue.end(), cmp_first);
-        auto [cost, node] = queue.back();
-        queue.pop_back();
+        auto [cost, affinity_cost, node] = queue.top();
+        queue.pop();
 
-        processed++;
-        if (cost == 0 and reachable(max_devotion, node)) {
-            // std::cerr << "y " << processed << "\n";
-            return node;
-        }
+        if (cost == 0 and reachable(max_devotion, node)) { return node; }
 
         for (const auto& stars : starmap) {
             if (not node.is_unchosen(stars)) continue;
-            if ((stars.first & inaccessible).any()) continue;
+
             auto next = node.add(stars);
-            auto next_cost = -affinity_heuristic(next);
+            auto next_affinity_cost
+                = vec_op([](const auto& lhs,
+                            const auto& rhs) { return std::max(lhs, rhs); },
+                         affinity_cost, stars.second.cost);
+            i8 next_cost = affinity_heuristic(next, next_affinity_cost);
+
             if (next_cost <= cost) continue;
-            if (seen.query(next.chosen)) continue;
-            seen.add(next.chosen);
-            queue.push_back({next_cost, next});
-            std::push_heap(queue.begin(), queue.end(), cmp_first);
+            if (seen.contains(next.chosen)) continue;
+
+            seen.insert(next.chosen);
+            queue.push({next_cost, next_affinity_cost, next});
         }
     }
 
-    // std::cerr << "n " << processed << "\n";
     return {};
 };
 
@@ -453,7 +444,6 @@ std::vector<std::string> possible_choices(int max_devotion,
     if (solution_cache.contains(reference_state))
         return unpack_stars(solution_cache.load(reference_state));
 
-    auto inaccessible = starset{};
     auto results = std::vector<std::string>{};
 
     for (const auto& stars : starmap) {
@@ -462,14 +452,9 @@ std::vector<std::string> possible_choices(int max_devotion,
         if (contains(constraints, name)) continue;
         if (reference_state.points < data.size) continue;
         constraints.push_back(name);
-        // std::cerr << name << "\n";
 
-        auto accessible
-            = possible_completion(max_devotion, constraints, inaccessible);
+        auto accessible = possible_completion(max_devotion, constraints);
         if (accessible) { results.push_back(name); }
-        else {
-            inaccessible |= id;
-        }
         constraints.pop_back();
     }
 
@@ -506,7 +491,7 @@ bool valid_choice(int max_devotion, std::vector<std::string> constraints,
     if (reference_state.points < data.size) return false;
 
     constraints.push_back(new_star);
-    auto accessible = possible_completion(max_devotion, constraints, {});
+    auto accessible = possible_completion(max_devotion, constraints);
     return (bool)accessible;
 }
 
@@ -518,7 +503,7 @@ struct devotion_step {
 std::vector<devotion_step> find_path(int max_devotion,
                                      std::vector<std::string> constraints)
 {
-    auto viable_state = possible_completion(max_devotion, constraints, {});
+    auto viable_state = possible_completion(max_devotion, constraints);
     if (not viable_state) return {};
     auto search = reach(*viable_state);
     if (not search) return {};
@@ -538,14 +523,23 @@ std::vector<devotion_step> find_path(int max_devotion,
 
 extern "C" int main()
 {
-    // auto solved = solve(55, constraints);
-    // std::cerr << solved.size() << " solutions\n";
-    // possible_completion(55, constraints);
+#ifndef __EMSCRIPTEN__
+    std::vector<std::string> constraints{
+        "Alladrah\'s Phoenix",
+        "Gallows",
+        "Hyrian, Guardian of the Celestial Gates",
+        "Revenant",
+        "Scales of Ulcama",
+        "Tempest",
+    };
+
+    possible_choices(55, constraints);
 
     // devotion z;
     // for (auto& name : constraints)
     //     z = z.add(starmap[compact_id[name_id(name)]]);
     // reach(z);
+#endif
 }
 
 #ifdef __EMSCRIPTEN__
