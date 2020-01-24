@@ -18,11 +18,18 @@
 (defn is-subset [a b]
   (= 0 (reduce bit-or (bitset-and a (bitset-not b)))))
 
-(defn sperner-contains [family set] (some #(is-subset set %) family))
-(defn sperner-remove [family set]
-  (vec (filter #(not (is-subset % set)) family)))
-(defn sperner-add [family set]
-  (if (sperner-contains family set) family
-      (let [family (sperner-remove family set)]
-        (conj family set))))
+(defn sperner-contains [family key]
+  (some #(is-subset key (first %)) family))
+
+(defn sperner-index [family key]
+  (first (keep-indexed
+          #(if (is-subset key (first %2)) %1)
+          family)))
+
+(defn sperner-remove [family key]
+  (vec (filter #(not (is-subset (first %) key)) family)))
+
+(defn sperner-add [family key value]
+  (if (sperner-contains family key) family
+      (conj (sperner-remove family key) [key value])))
 

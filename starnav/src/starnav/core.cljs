@@ -138,32 +138,47 @@
       starset)))
 (defn make-starset [stars] (reduce sets/bitset-or (map star-id stars)))
 
-
 (def solution-cache-true (atom []))
 (def solution-cache-false (atom []))
+(def cache-token (atom 0))
+
+(defn evict-2random [cache size]
+  (let [ai (rand-int size) a (second (cache ai))
+        bi (rand-int size) b (second (cache bi))
+        lru (if (< a b) ai bi)
+        update (vec (concat (subvec cache 0 lru)
+                            (subvec cache (inc lru) size)))]
+    update))
+
+(defn cache-evict [cache]
+  (let [size (count (deref cache))]
+    (when (< 100 size) (swap! cache evict-2random size))))
+
 (defn cache-retrieve [constraints]
   (let [query (make-starset constraints)
-        available (sets/sperner-contains
-                   (deref solution-cache-true)
-                   query)
-        unavailable (sets/sperner-contains
-                     (deref solution-cache-false)
-                     (sets/bitset-not query))]
+        available (sets/sperner-contains (deref solution-cache-true) query)
+        unavailable (sets/sperner-contains (deref solution-cache-false)
+                                               (sets/bitset-not query))]
     (cond
       available true
       unavailable false
       :else nil)))
+
 (defn cache-update [constraints result]
-  (let [cache (case result
-                true solution-cache-true
-                false solution-cache-false)
-        starset (case result
-                  true (make-starset constraints)
-                  false (sets/bitset-not (make-starset constraints)))]
-    (swap! cache sets/sperner-add starset)))
+  (let [token (deref cache-token)
+        cache (if result
+                solution-cache-true
+                solution-cache-false)
+        starset (make-starset constraints)
+        starset (if result starset
+                    (sets/bitset-not starset))
+        token (swap! cache-token inc)]
+    (swap! cache sets/sperner-add starset token)
+    (cache-evict cache)))
+
 (defn cache-invalidate []
-  (reset! solution-cache-true [])
-  (reset! solution-cache-false []))
+  (reset! solution-cache-true {})
+  (reset! solution-cache-false {}))
 
 
 (def pending-updates (atom {}))
