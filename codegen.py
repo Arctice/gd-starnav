@@ -13,6 +13,7 @@ starmap = {}
 
 source = open('db.csv').read().split('\n')[1:]
 for stars in csv.reader(source):
+    assert(len(stars) >= 13)
     name = stars[0]
     id = name_id(name)
     size = int(stars[1])

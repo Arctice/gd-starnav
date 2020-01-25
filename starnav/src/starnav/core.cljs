@@ -4,23 +4,32 @@
             [goog.events :as events]
             [clojure.string :as str]))
 
-(def stars [
- "P" "R" "G" "Y" "B" "Affliction" "Akeron's Scorpion" "Alladrah's Phoenix"
- "Amatok the Spirit of Winter" "Anvil" "Assassin" "Assassin's Blade"
- "Autumn Boar" "Bard's Harp" "Bat" "Behemoth" "Berserker" "Blades of Nadaan"
- "Bull" "Bysmiel's Bonds" "Chariot of the Dead" "Crab" "Crane" "Dire Bear"
- "Dryad" "Eel" "Empty Throne" "Eye of the Guardian" "Falcon" "Fiend" "Fox"
- "Gallows" "Ghoul" "Hammer" "Harpy" "Harvestman's Scythe" "Hawk" "Hound"
- "Huntress" "Hydra" "Hyrian, Guardian of the Celestial Gates" "Imp" "Jackal"
- "Kraken" "Lion" "Lizard" "Lotus" "Magi" "Manticore" "Mantis" "Messenger of War"
- "Murmur, Mistress of Rumors" "Nighttalon" "Oklaine's Lantern" "Owl" "Panther"
- "Quill" "Rat" "Raven" "Revenant" "Rhowan's Crown" "Rhowan's Scepter"
- "Sailor's Guide" "Scales of Ulcama" "Scarab" "Scholar's Light"
- "Shepherd's Crook" "Shieldmaiden" "Solael's Witchblade" "Solemn Watcher"
- "Spider" "Staff of Rattosh" "Stag" "Targo the Builder" "Tempest" "Toad"
- "Tortoise" "Tsunami" "Typhos, the Jailor of Souls"
- "Ulo the Keeper of the Waters" "Ulzaad, Herald of Korvaak" "Viper" "Vulture"
- "Wendigo" "Widow" "Wolverine" "Wraith" "Wretch"])
+(def stars
+  (concat
+   ["P" "R" "G" "Y" "B"]
+   (sort ["Affliction" "Akeron's Scorpion" "Alladrah's Phoenix"
+          "Amatok the Spirit of Winter" "Anvil" "Assassin" "Assassin's Blade"
+          "Autumn Boar" "Bard's Harp" "Bat" "Behemoth" "Berserker" "Blades of Nadaan"
+          "Bull" "Bysmiel's Bonds" "Chariot of the Dead" "Crab" "Crane" "Dire Bear"
+          "Dryad" "Eel" "Empty Throne" "Eye of the Guardian" "Falcon" "Fiend" "Fox"
+          "Gallows" "Ghoul" "Hammer" "Harpy" "Harvestman's Scythe" "Hawk" "Hound"
+          "Huntress" "Hydra" "Hyrian, Guardian of the Celestial Gates" "Imp" "Jackal"
+          "Kraken" "Lion" "Lizard" "Lotus" "Magi" "Manticore" "Mantis" "Messenger of War"
+          "Murmur, Mistress of Rumors" "Nighttalon" "Oklaine's Lantern" "Owl" "Panther"
+          "Quill" "Rat" "Raven" "Revenant" "Rhowan's Crown" "Rhowan's Scepter"
+          "Sailor's Guide" "Scales of Ulcama" "Scarab" "Scholar's Light"
+          "Shepherd's Crook" "Shieldmaiden" "Solael's Witchblade" "Solemn Watcher"
+          "Spider" "Staff of Rattosh" "Stag" "Targo the Builder" "Tempest" "Toad"
+          "Tortoise" "Tsunami" "Typhos, the Jailor of Souls"
+          "Ulo the Keeper of the Waters" "Ulzaad, Herald of Korvaak" "Viper" "Vulture"
+          "Wendigo" "Widow" "Wolverine" "Wraith" "Wretch" "Abomination"
+          "Aeon's Hourglass" "Attak Seru, the Mirage" "Azrakaa, the Eternal Sands"
+          "Blind Sage" "Dying God" "Ishtak, the Spring Maiden"
+          "Korvaak, the Eldritch Sun" "Leviathan" "Light of Empyrion"
+          "Mogdrogen the Wolf" "Obelisk of Menhir" "Oleron" "Rattosh, the Veilwarden"
+          "Spear of the Heavens" "Tree of Life" "Ultos, Shepherd of Storms"
+          "Ulzuin's Torch" "Unknown Soldier" "Vire, the Stone Matron"
+          "Yugol, the Insatiable Night"])))
 
 (def threads (atom []))
 (def ready-flags (atom []))
@@ -31,8 +40,7 @@
 
 (defn on-load [id]
   (swap! ready-flags assoc id true)
-  (reset! solver-ready true)
-  (println "thread" id "ready"))
+  (reset! solver-ready true))
 
 (defn pending-jobs [] (not (empty? (deref jobs))))
 (defn thread-ready [id] (nth (deref ready-flags) id))
@@ -77,22 +85,29 @@
     (case name
       "ready" (on-load thread-id)
       "result" (on-result data)
-      (println "worker msg:" name))))
+      :else nil ;; panic
+      )))
 
 (defn spawn-thread []
   (let [worker (new js/Worker "worker.js")
         threads (swap! threads conj worker)
         thread-id (dec (count threads))]
     (swap! ready-flags conj false)
-    (aset worker 'onerror (fn [err] (println "worker error:" (.-message err))))
+    (aset worker 'onerror (fn [err] (println "Thread error:" (.-message err))))
     (aset worker 'onmessage thread-msg-handler)
     (.postMessage worker (array "init" (array thread-id)))
     thread-id))
 
-
 (defn solve-one [devotion constraints choice callback]
   (let [strvec (clj->js constraints)]
     (send-job "solve-one" [devotion strvec choice] callback)))
+(defn solve-path [devotion constraints callback]
+  (let [strvec (clj->js constraints)]
+    (send-job "find-path" [devotion strvec] callback)))
+
+(defn set-depths [depth]
+  (doseq [thread (deref threads)]
+    (.postMessage thread (array "search-depth" (array depth)))))
 
 
 (defn choice-checkbox [name]
@@ -103,6 +118,7 @@
        (str/join "" (map choice-checkbox stars))
        "</div>"))
 
+
 (defn app-dom [] (dom/getElement "app"))
 
 (defn get-checkbox [name]
@@ -112,20 +128,49 @@
     (if (nil? checkbox)
       false
       (.-checked checkbox))))
-(defn selected [] (set (filter is-checked stars)))
+(defn selected []
+  (set (filter is-checked stars)))
 
 (defn checkbox-set-state [name class available]
   (let [box (get-checkbox name)]
     (.setAttribute box "class" class)
     (aset box "disabled" (not available))))
 
+
 (defn devotion-field [] (dom/getElement "devotion-max"))
-(defn devotion-limit []
-  (let [field (.-value (devotion-field))
+(defn search-depth-field [] (dom/getElement "search-depth"))
+
+(defn read-number-field [dom default]
+  (let [field (.-value dom)
         parse (js/parseInt field 10)
-        val (if (js/isNaN parse) 55 parse)
-        bound (max 0 (min 55 val))]
-    bound))
+        val (if (js/isNaN parse) default parse)]
+    val))
+(defn devotion-limit []
+  (max 0 (min 55
+              (read-number-field (devotion-field)55))))
+(defn search-depth []
+  (max 0 (min 40
+              (read-number-field (search-depth-field) 2))))
+
+
+(defn pathfind-button [] (dom/getElement "path-find"))
+
+(defn path-text [] (dom/getElement "path-text"))
+(defn set-path-text-pending []
+  (aset (path-text) 'innerHTML "Please wait..."))
+
+(defn render-path-step [step]
+  (str
+   "<li "
+   (str/replace
+    (str/replace step "add:" "class=\"path-add\" >")
+                      "cut:" "class=\"path-cut\" >")
+   "</li>"))
+(defn render-path-text [path]
+  (aset (path-text) 'innerHTML
+        (str "<ul class=\"path-steps\">"
+             (str/join "<br>" (map render-path-step (js->clj path)))
+             "</ul>")))
 
 
 (def star-bits (atom {}))
@@ -181,6 +226,7 @@
   (reset! solution-cache-false {}))
 
 
+
 (def pending-updates (atom {}))
 (defn cancel-pending []
   (cancel-all-jobs)
@@ -210,7 +256,6 @@
           (dispatch-update devotion selections choice)
           (direct-update choice cached)))))
 
-
 (def previous-selections (atom []))
 (def previous-devotion (atom []))
 (defn user-update []
@@ -224,17 +269,59 @@
       (cache-invalidate))
     (when (and (deref solver-ready) changed)
       (reset! previous-selections selections)
-      (when (not (empty? selections))
-        (check-all devotion selections)))))
+      (check-all devotion selections))))
 
+
+(def pending-path-search (atom nil))
+(defn cancel-path-search []
+  (cancel-job (first (deref pending-path-search)))
+  (reset! pending-path-search nil))
+
+(defn update-path [token path]
+  (reset! pending-path-search nil)
+  (render-path-text path))
+
+(defn dispatch-path-search [devotion selections]
+  (cancel-path-search)
+  (set-path-text-pending)
+  (let [token (solve-path devotion selections update-path)]
+    (reset! pending-path-search [token devotion selections])))
+
+(def previous-path-selections (atom []))
+(def previous-path-devotion (atom []))
+(defn find-path []
+  (let [selections (selected)
+        path-changed (not (= selections (deref previous-path-selections)))
+        devotion (devotion-limit)
+        devotion-changed (not (= devotion (deref previous-path-devotion)))]
+    (when (or path-changed devotion-changed)
+      (reset! previous-path-devotion devotion)
+      (reset! previous-path-selections selections)
+      (dispatch-path-search devotion selections))))
+
+(defn update-depth []
+  (cache-invalidate)
+  (set-depths (search-depth)))
 
 (doall (repeatedly js/navigator.hardwareConcurrency spawn-thread))
 
 (aset (app-dom) 'innerHTML (render-selections))
 (aset (app-dom) 'align "center")
+
 (events/removeAll (app-dom))
-(events/listen (app-dom) 'click user-update)
+(events/listen (app-dom)
+               'click user-update)
+
 (events/removeAll (devotion-field))
-(events/listen (devotion-field) 'input user-update)
+(events/listen (devotion-field)
+               'input user-update)
+
+(events/removeAll (pathfind-button))
+(events/listen (pathfind-button)
+               'click find-path)
+
+(events/removeAll (search-depth-field))
+(events/listen (search-depth-field)
+               'input update-depth)
 
 (user-update)

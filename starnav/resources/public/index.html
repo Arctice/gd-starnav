@@ -7,9 +7,15 @@
     <!-- <link rel="icon" href="https://clojurescript.org/images/cljs-logo-icon-32.png"> -->
   </head>
   <body>
-    <span class="desc"> Devotion maximum: <input type="text" id="devotion-max" size="2" autofocus /> </span>
-    <div id="app">
-
+    <span class="desc">
+      Devotion maximum: <input type="text" id="devotion-max" size="2" value="55" placeholder="55" />
+      Search depth: <input type="text" id="search-depth" size="2" value="2" placeholder="2" />
+    </span>
+    <div id="app"> Loading... </div>
+    <br>
+    <div id="path-div">
+      <button id="path-find">Find path</button>
+      <div id="path-text">Select the constellations you want above, then press the find path button.</div>
     </div>
     <script src="starnav.js" type="text/javascript"></script>
     <script src="cljs-out/dev-main.js" type="text/javascript"></script>

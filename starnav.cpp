@@ -103,6 +103,13 @@ struct devotion {
     {
         if (not is_chosen(stars.first)) return false;
         if (not remove(stars).is_available(stars)) return false;
+
+        auto h = remove(stars);
+        auto m = h.missing_affinity(h.affinity_cost());
+        for (int n(0); n < 5; ++n) {
+            if (m[n]) return false;
+        }
+
         return true;
     }
 
@@ -267,7 +274,8 @@ struct search_item{
 
 std::optional<devotion>
 possible_completion(int max_devotion,
-                    const std::vector<std::string>& constraints)
+                    const std::vector<std::string>& constraints,
+                    int search_depth)
 {
     auto incomplete = incomplete_state(max_devotion, constraints);
     if (incomplete.points < 0) return {};
@@ -280,9 +288,20 @@ possible_completion(int max_devotion,
     phmap::flat_hash_set<starset, hash_starset> seen;
     seen.insert(incomplete.chosen);
 
+    auto threshold_steps{4 + std::max(0, search_depth)};
+    auto threshold{103682ll};
+    auto processed{0ll};
+
     while (!queue.empty()) {
         auto [cost, affinity_cost, node] = queue.top();
         queue.pop();
+
+        processed++;
+        if(processed > threshold){
+            threshold = threshold * 1.618034;
+            threshold_steps--;
+            if (threshold_steps < 0) return {};
+        }
 
         if (cost == 0 and reachable(max_devotion, node)) { return node; }
 
@@ -330,7 +349,7 @@ struct action {
     starid stars;
 };
 
-std::optional<persistent_list<action>> reach(devotion start)
+std::optional<persistent_list<action>> reach(int max_devotion, devotion start)
 {
     std::vector<std::tuple<short, devotion, persistent_list<action>>> queue{
         {start.points, start, {}}};
@@ -342,11 +361,11 @@ std::optional<persistent_list<action>> reach(devotion start)
         auto [points, node, path] = queue.back();
         queue.pop_back();
 
-        if (node.points == 55) { return {path}; }
+        if (node.points == max_devotion) { return {path}; }
 
         for (const auto& stars : starmap) {
             auto next = node;
-            auto step{change::add}; // compact_id.at(id)
+            auto step{change::add};
             if (node.is_available(stars)) { next = node.add(stars); }
             else if (node.is_removable(stars)) {
                 next = node.remove(stars);
@@ -438,7 +457,8 @@ std::vector<std::string> unpack_stars(const starset& set){
 }
 
 std::vector<std::string> possible_choices(int max_devotion,
-                                          std::vector<std::string> constraints)
+                                          std::vector<std::string> constraints,
+                                          int search_depth)
 {
     auto reference_state = incomplete_state(max_devotion, constraints);
     if (solution_cache.contains(reference_state))
@@ -453,7 +473,8 @@ std::vector<std::string> possible_choices(int max_devotion,
         if (reference_state.points < data.size) continue;
         constraints.push_back(name);
 
-        auto accessible = possible_completion(max_devotion, constraints);
+        auto accessible
+            = possible_completion(max_devotion, constraints, search_depth);
         if (accessible) { results.push_back(name); }
         constraints.pop_back();
     }
@@ -473,15 +494,44 @@ public:
     }
 } _;
 
-std::vector<std::string> solve(int max_devotion,
-                               std::vector<std::string> constraints)
+struct devotion_step {
+    bool is_add;
+    std::string starname;
+};
+
+std::vector<devotion_step> solve_path(int max_devotion,
+                                      std::vector<std::string> constraints,
+                                      int search_depth)
 {
-    auto solution = possible_choices(max_devotion, constraints);
+    auto viable_state
+        = possible_completion(max_devotion, constraints, search_depth);
+    if (not viable_state) return {};
+
+    auto search = reach(max_devotion, *viable_state);
+    if (not search) return {};
+
+    std::vector<devotion_step> result{};
+
+    auto path = *search;
+    while (path) {
+        bool is_add = path->value.step == change::add;
+        auto name = str_name(decompactize(path->value.stars));
+        result.push_back({is_add, name});
+        path = path->head;
+    }
+
+    return result;
+}
+
+std::vector<std::string>
+solve(int max_devotion, std::vector<std::string> constraints, int search_depth)
+{
+    auto solution = possible_choices(max_devotion, constraints, search_depth);
     return solution;
 }
 
 bool valid_choice(int max_devotion, std::vector<std::string> constraints,
-                  std::string new_star)
+                  std::string new_star, int search_depth)
 {
     auto reference_state = incomplete_state(max_devotion, constraints);
     auto results = std::vector<std::string>{};
@@ -491,34 +541,28 @@ bool valid_choice(int max_devotion, std::vector<std::string> constraints,
     if (reference_state.points < data.size) return false;
 
     constraints.push_back(new_star);
-    auto accessible = possible_completion(max_devotion, constraints);
+    auto accessible
+        = possible_completion(max_devotion, constraints, search_depth);
     return (bool)accessible;
 }
 
-struct devotion_step {
-    bool is_add;
-    std::string starname;
-};
-
-std::vector<devotion_step> find_path(int max_devotion,
-                                     std::vector<std::string> constraints)
+std::vector<std::string> find_path(int max_devotion,
+                                   std::vector<std::string> constraints,
+                                   int search_depth)
 {
-    auto viable_state = possible_completion(max_devotion, constraints);
-    if (not viable_state) return {};
-    auto search = reach(*viable_state);
-    if (not search) return {};
+    if (not possible_completion(max_devotion, constraints, search_depth))
+        return {{"Impossible constellations!"}};
 
-    std::vector<devotion_step> result{};
+    auto solution = solve_path(max_devotion, constraints, search_depth);
 
-    auto path = *search;
-    while (path) {
-        path = path->head;
-        bool is_add = path->value.step == change::add;
-        auto name = str_name(path->value.stars);
-        result.push_back({is_add, name});
+    std::vector<std::string> path_steps;
+    for (const auto& [is_add, star] : solution) {
+        std::string step = std::string(is_add ? "cut" : "add") + ": ";
+        step += star;
+        path_steps.push_back(step);
     }
 
-    return result;
+    return path_steps;
 }
 
 extern "C" int main()
@@ -531,16 +575,16 @@ extern "C" int main()
         "Revenant",
         "Scales of Ulcama",
         "Tempest",
+        "Eel",
+        // "Vire, the Stone Matron",
+        // "Yugol, the Insatiable Night",
     };
 
-    possible_choices(55, constraints);
-
-    // devotion z;
-    // for (auto& name : constraints)
-    //     z = z.add(starmap[compact_id[name_id(name)]]);
-    // reach(z);
+    // possible_choices(55, constraints);
+    // std::cerr << (bool)possible_completion(55, constraints, 2) << "\n";
 #endif
 }
+
 
 #ifdef __EMSCRIPTEN__
 
@@ -553,6 +597,7 @@ EMSCRIPTEN_BINDINGS(starnav)
     register_vector<std::string>("strvec");
     function("solve", &solve);
     function("valid_choice", &valid_choice);
+    function("find_path", &find_path);
 }
 
 #endif

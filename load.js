@@ -10,7 +10,7 @@ function main(module){
     constraints.push_back("Scales of Ulcama");
     constraints.push_back("Tempest");
 
-    var result = module.solve(55, constraints);
+    var result = module.solve(55, constraints, 2);
     print(result.size());
 }
 

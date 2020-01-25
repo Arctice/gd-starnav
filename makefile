@@ -12,7 +12,7 @@ debug:
 	clang++-10 starnav.cpp -o build/starnav \
 	-std=c++2a  \
 	-fsanitize=address,undefined -g -fno-omit-frame-pointer \
-        -Wall -Wextra -Werror -Wpedantic --analyze \
+        -Wall -Wextra -Werror -Wpedantic \
         -Wunreachable-code -Wuninitialized -Waddress -Wtautological-compare \
         -Wtautological-unsigned-zero-compare -Woverloaded-virtual
 wasm: builddir
