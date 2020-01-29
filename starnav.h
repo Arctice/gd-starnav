@@ -111,7 +111,7 @@ const auto stardb = std::vector<std::pair<std::string, constellation>>{
     {"Obelisk of Menhir", {7, {0, 0, 0, 8, 15}, {0, 0, 0, 0, 0}}},
     {"Oleron", {7, {20, 0, 0, 7, 0}, {0, 0, 0, 0, 0}}},
     {"Rattosh, the Veilwarden", {6, {0, 6, 10, 6, 0}, {0, 0, 0, 0, 0}}},
-    {"Spear of the Heavens", {6, {0, 7, 0, 20, 0}, {0, 0, 0, 0, 0}}},
+    {"Spear of the Heavens", {6, {0, 7, 0, 0, 20}, {0, 0, 0, 0, 0}}},
     {"Tree of Life", {6, {0, 0, 0, 7, 20}, {0, 0, 0, 0, 0}}},
     {"Ultos, Shepherd of Storms", {6, {0, 6, 10, 0, 10}, {0, 0, 0, 0, 0}}},
     {"Ulzuin's Torch", {7, {0, 8, 15, 0, 0}, {0, 0, 0, 0, 0}}},
