@@ -1,0 +1,33 @@
+
+language: generic
+os: linux
+dist: bionic
+branches:
+  only:
+  - master
+compilers:
+- clang
+
+cache:
+  apt: true
+  directories:
+  - $HOME/.emscripten_cache/wasm-bc
+  - $HOME/.m2
+before_install:
+- sudo apt-get update
+- sudo apt-get install git leiningen
+- ./emscripten-install.sh
+script:
+- ./release.sh
+
+deploy:
+  provider: pages
+  skip_cleanup: true
+  github_token: $GITHUB_TOKEN
+  local_dir: starnav/resources/public/
+  target_branch: gh-pages
+  on:
+    branch: master
+
+notifications:
+  email: false

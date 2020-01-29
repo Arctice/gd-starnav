@@ -25,3 +25,4 @@ wasm: builddir
 resources:
 	cp build/starnav.* starnav/resources/public && \
 	cp worker.js starnav/resources/public
+
