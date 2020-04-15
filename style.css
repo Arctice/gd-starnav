@@ -1,0 +1,97 @@
+.desc {
+    font-size: 20px;
+    margin: 4px;
+    display: inline-block;
+}
+
+#devotion-max {
+    font-size: 20px;
+    width: 3em;
+}
+
+#search-depth {
+    font-size: 20px;
+    width: 2em;
+}
+
+.available + span{
+    border: 2px;
+    border-style: solid;
+    font-size:20px;
+    line-height: 1.8;
+    padding: 2px 6px 2px 6px;
+    white-space:nowrap;
+    border-color: #999;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+.available:checked + span{
+    border-color: #999;
+    background:#000;
+    color: #fff;
+}
+
+.available + span:hover{
+    background:#e3f9f9;
+    border-color: #555;
+}
+
+.available:checked + span:hover{
+    background:#622;
+}
+
+.unavailable + span{
+    border: 2px;
+    border-style: solid;
+    font-size:20px;
+    line-height: 1.8;
+    padding: 2px 6px 2px 6px;
+    white-space:nowrap;
+
+    border-color: #999;
+    background:#888;
+    color: #ddd;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+.pending + span{
+    border: 2px;
+    border-style: solid;
+    font-size:20px;
+    line-height: 1.8;
+    padding: 2px 6px 2px 6px;
+    white-space:nowrap;
+
+    border-color: #aaa;
+    background:#ddd;
+    color: transparent;
+
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+}
+
+.path-steps{
+    font-size: 18px;
+}
+.path-steps > li{
+    height: 0em;
+}
+.path-add{
+    list-style-type: "+ ";
+    color: #095;
+}
+.path-cut{
+    list-style-type: "\2212  ";
+    color: #b32;
+}
+
+input[type=checkbox] {
+display: none;
+}
