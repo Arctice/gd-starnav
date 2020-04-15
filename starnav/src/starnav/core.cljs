@@ -188,6 +188,7 @@
 (def solution-cache-true (atom []))
 (def solution-cache-false (atom []))
 (def cache-token (atom 0))
+(defn next-cache-token [] (swap! cache-token inc))
 
 (defn evict-2random [cache size]
   (let [ai (rand-int size) a (second (cache ai))
@@ -201,25 +202,29 @@
   (let [size (count (deref cache))]
     (when (< 100 size) (swap! cache evict-2random size))))
 
+(defn cache-refresh [cache key]
+  (swap! cache (fn [s] (sets/sperner-add
+                        (sets/sperner-remove s key)
+                        key (next-cache-token)))))
+
 (defn cache-retrieve [constraints]
   (let [query (make-starset constraints)
         available (sets/sperner-contains (deref solution-cache-true) query)
         unavailable (sets/sperner-contains (deref solution-cache-false)
                                                (sets/bitset-not query))]
     (cond
-      available true
-      unavailable false
+      available (do (cache-refresh solution-cache-true query) true)
+      unavailable (do (cache-refresh solution-cache-false query) false)
       :else nil)))
 
 (defn cache-update [constraints result]
-  (let [token (deref cache-token)
+  (let [token (next-cache-token)
         cache (if result
                 solution-cache-true
                 solution-cache-false)
         starset (make-starset constraints)
         starset (if result starset
-                    (sets/bitset-not starset))
-        token (swap! cache-token inc)]
+                    (sets/bitset-not starset))]
     (swap! cache sets/sperner-add starset token)
     (cache-evict cache)))
 
