@@ -310,7 +310,9 @@
   (cache-invalidate)
   (set-depths (search-depth)))
 
-(doall (repeatedly js/navigator.hardwareConcurrency spawn-thread))
+(doall (repeatedly
+        (max 1 (min 16 js/navigator.hardwareConcurrency))
+        spawn-thread))
 
 (aset (app-dom) 'innerHTML (render-selections))
 (aset (app-dom) 'align "center")
