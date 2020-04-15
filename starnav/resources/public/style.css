@@ -6,10 +6,12 @@
 
 #devotion-max {
     font-size: 20px;
+    width: 3em;
 }
 
 #search-depth {
     font-size: 20px;
+    width: 2em;
 }
 
 .available + span{
@@ -76,8 +78,10 @@
 }
 
 .path-steps{
-    line-height: 0.2;
     font-size: 18px;
+}
+.path-steps > li{
+    height: 0em;
 }
 .path-add{
     list-style-type: "+ ";

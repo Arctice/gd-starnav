@@ -140,17 +140,19 @@
 (defn devotion-field [] (dom/getElement "devotion-max"))
 (defn search-depth-field [] (dom/getElement "search-depth"))
 
-(defn read-number-field [dom default]
+(defn read-number-field [dom min-val max-val default]
   (let [field (.-value dom)
         parse (js/parseInt field 10)
-        val (if (js/isNaN parse) default parse)]
+        val (if (js/isNaN parse) default parse)
+        clamped (max min-val (min max-val val))]
+    (when (not= val clamped)
+      (aset dom 'value clamped))
     val))
+
 (defn devotion-limit []
-  (max 0 (min 55
-              (read-number-field (devotion-field)55))))
+  (read-number-field (devotion-field) 0 55 55))
 (defn search-depth []
-  (max 0 (min 40
-              (read-number-field (search-depth-field) 2))))
+  (read-number-field (search-depth-field) 0 5 2))
 
 
 (defn pathfind-button [] (dom/getElement "path-find"))
